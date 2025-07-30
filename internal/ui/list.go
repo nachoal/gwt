@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ia/gwt/internal/worktree"
+	"github.com/nachoal/gwt/internal/worktree"
 )
 
 type listModel struct {

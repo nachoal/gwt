@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ia/gwt/internal/config"
+	"github.com/nachoal/gwt/internal/config"
 	"github.com/spf13/cobra"
 )
 

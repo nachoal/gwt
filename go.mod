@@ -1,4 +1,4 @@
-module github.com/ia/gwt
+module github.com/nachoal/gwt
 
 go 1.22
 

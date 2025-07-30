@@ -14,7 +14,7 @@ A beautiful and simple CLI tool for managing git worktrees with automatic setup 
 ## Installation
 
 ```bash
-go install github.com/ia/gwt@latest
+go install github.com/nachoal/gwt@latest
 ```
 
 ## Quick Start

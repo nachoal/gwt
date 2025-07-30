@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/ia/gwt/cmd"
+	"github.com/nachoal/gwt/cmd"
 )
 
 func main() {

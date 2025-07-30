@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ia/gwt/internal/config"
-	"github.com/ia/gwt/internal/worktree"
+	"github.com/nachoal/gwt/internal/config"
+	"github.com/nachoal/gwt/internal/worktree"
 	"github.com/spf13/cobra"
 )
 

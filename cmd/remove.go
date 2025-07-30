@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/ia/gwt/internal/worktree"
+	"github.com/nachoal/gwt/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
