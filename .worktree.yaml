@@ -1,0 +1,10 @@
+version: 1
+copy:
+- .env
+- .env.local
+setup:
+- go mod download
+settings:
+  root: ~/git-worktrees
+  auto_clean_merged: true
+  confirm_delete: true
