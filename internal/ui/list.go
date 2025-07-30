@@ -10,10 +10,12 @@ import (
 )
 
 type listModel struct {
-	table      table.Model
-	worktrees  []worktree.Worktree
-	err        error
-	quitting   bool
+	table          table.Model
+	worktrees      []worktree.Worktree
+	err            error
+	quitting       bool
+	confirmDelete  bool
+	deleteTarget   string
 }
 
 var (
@@ -64,7 +66,37 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// TODO: Add switch functionality
 			return m, nil
 		case "d":
-			// TODO: Add delete functionality
+			if m.confirmDelete {
+				return m, nil // Already in confirm mode
+			}
+			// Get selected worktree
+			selectedRow := m.table.SelectedRow()
+			if len(selectedRow) > 0 {
+				m.confirmDelete = true
+				m.deleteTarget = selectedRow[0] // Branch name
+			}
+			return m, nil
+		case "y":
+			if m.confirmDelete && m.deleteTarget != "" {
+				// Find the worktree path
+				var targetPath string
+				for _, wt := range m.worktrees {
+					if wt.Branch == m.deleteTarget {
+						targetPath = wt.Path
+						break
+					}
+				}
+				if targetPath != "" {
+					m.confirmDelete = false
+					return m, m.deleteWorktree(targetPath)
+				}
+			}
+			return m, nil
+		case "n":
+			if m.confirmDelete {
+				m.confirmDelete = false
+				m.deleteTarget = ""
+			}
 			return m, nil
 		}
 
@@ -93,6 +125,15 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.table.SetRows(rows)
 		return m, nil
+	
+	case worktreeDeletedMsg:
+		m.deleteTarget = ""
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		// Reload the worktree list after deletion
+		return m, m.loadWorktrees
 	}
 
 	var cmd tea.Cmd
@@ -112,7 +153,16 @@ func (m listModel) View() string {
 		s += infoStyle.Render("Create one with: gwt new <branch-name>") + "\n"
 	} else {
 		s += m.table.View() + "\n\n"
-		s += infoStyle.Render("↑/↓: Navigate • Enter: Switch • d: Delete • q: Quit")
+		
+		if m.confirmDelete {
+			s += "\n" + lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("196")).
+				Render("⚠️  Delete worktree '"+m.deleteTarget+"'?") + "\n"
+			s += infoStyle.Render("y: Yes • n: No")
+		} else {
+			s += infoStyle.Render("↑/↓: Navigate • Enter: Switch • d: Delete • q: Quit")
+		}
 	}
 
 	return s
@@ -128,5 +178,16 @@ func (m listModel) loadWorktrees() tea.Msg {
 	return worktreesLoadedMsg{
 		worktrees: worktrees,
 		err:       err,
+	}
+}
+
+type worktreeDeletedMsg struct {
+	err error
+}
+
+func (m listModel) deleteWorktree(path string) tea.Cmd {
+	return func() tea.Msg {
+		err := worktree.Remove(path, false)
+		return worktreeDeletedMsg{err: err}
 	}
 }
