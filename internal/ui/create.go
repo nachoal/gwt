@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"path/filepath"
+	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -168,7 +168,11 @@ func (m createModel) runNextStep() tea.Cmd {
 
 		case 2: // Copy files
 			cfg, _ := config.LoadConfig()
-			mainPath := filepath.Dir(m.worktreePath)
+			// Get the current working directory (main worktree)
+			mainPath, err := os.Getwd()
+			if err != nil {
+				return stepCompleteMsg{err: err}
+			}
 			
 			if err := worktree.CopyFiles(mainPath, m.worktreePath, cfg.Copy); err != nil {
 				return stepCompleteMsg{err: err}
