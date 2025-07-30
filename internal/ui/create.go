@@ -19,15 +19,16 @@ type step struct {
 }
 
 type createModel struct {
-	branchName   string
-	fromBranch   string
-	steps        []step
-	currentStep  int
-	spinner      spinner.Model
-	done         bool
-	err          error
-	loadedConfig *config.Config
-	worktreePath string
+	branchName    string
+	fromBranch    string
+	steps         []step
+	currentStep   int
+	spinner       spinner.Model
+	done          bool
+	err           error
+	loadedConfig  *config.Config
+	worktreePath  string
+	currentCommand string
 }
 
 var (
@@ -84,7 +85,18 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.steps[m.currentStep].err = msg.err
 			m.err = msg.err
 			m.done = true
-			return m, nil
+			// Automatically quit after showing error
+			return m, tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+				return tea.Quit()
+			})
+		}
+
+		// Store data from completed steps
+		if msg.worktreePath != "" {
+			m.worktreePath = msg.worktreePath
+		}
+		if msg.config != nil {
+			m.loadedConfig = msg.config
 		}
 
 		m.steps[m.currentStep].status = "done"
@@ -95,7 +107,10 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.done = true
-		return m, nil
+		// Automatically quit after a short delay to show the success message
+		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+			return tea.Quit()
+		})
 	}
 
 	return m, nil
@@ -127,8 +142,9 @@ func (m createModel) View() string {
 			s += errorStyle.Render("Failed to create worktree") + "\n"
 		} else {
 			s += lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")).
-				Render("✓ Worktree created successfully!") + "\n"
-			s += infoStyle.Render("Press enter to exit")
+				Render("✓ Worktree created successfully!") + "\n\n"
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("86")).
+				Render("📁 " + m.worktreePath) + "\n"
 		}
 	}
 
@@ -136,7 +152,9 @@ func (m createModel) View() string {
 }
 
 type stepCompleteMsg struct {
-	err error
+	err          error
+	worktreePath string
+	config       *config.Config
 }
 
 func (m createModel) runNextStep() tea.Cmd {
@@ -150,7 +168,7 @@ func (m createModel) runNextStep() tea.Cmd {
 			if err != nil {
 				return stepCompleteMsg{err: err}
 			}
-			m.loadedConfig = cfg
+			return stepCompleteMsg{config: cfg}
 
 		case 1: // Create worktree
 			projectName, err := worktree.GetProjectName()
@@ -158,16 +176,27 @@ func (m createModel) runNextStep() tea.Cmd {
 				return stepCompleteMsg{err: err}
 			}
 
-			cfg, _ := config.LoadConfig()
+			cfg := m.loadedConfig
+			if cfg == nil {
+				cfg, _ = config.LoadConfig()
+			}
 			targetPath := worktree.GetWorktreePath(cfg.Settings.Root, projectName, m.branchName)
 			
 			if err := worktree.Create(m.branchName, m.fromBranch, targetPath); err != nil {
 				return stepCompleteMsg{err: err}
 			}
-			m.worktreePath = targetPath
+			return stepCompleteMsg{worktreePath: targetPath}
 
 		case 2: // Copy files
-			cfg, _ := config.LoadConfig()
+			if m.worktreePath == "" {
+				return stepCompleteMsg{err: fmt.Errorf("worktree path not set")}
+			}
+			
+			cfg := m.loadedConfig
+			if cfg == nil {
+				cfg, _ = config.LoadConfig()
+			}
+			
 			// Get the current working directory (main worktree)
 			mainPath, err := os.Getwd()
 			if err != nil {
@@ -177,15 +206,25 @@ func (m createModel) runNextStep() tea.Cmd {
 			if err := worktree.CopyFiles(mainPath, m.worktreePath, cfg.Copy); err != nil {
 				return stepCompleteMsg{err: err}
 			}
+			return stepCompleteMsg{}
 
 		case 3: // Run setup commands
-			cfg, _ := config.LoadConfig()
+			if m.worktreePath == "" {
+				return stepCompleteMsg{err: fmt.Errorf("worktree path not set")}
+			}
+			
+			cfg := m.loadedConfig
+			if cfg == nil {
+				cfg, _ = config.LoadConfig()
+			}
+			
 			if err := worktree.RunSetupCommands(m.worktreePath, cfg.Setup); err != nil {
 				return stepCompleteMsg{err: err}
 			}
+			return stepCompleteMsg{}
 		}
 
-		return stepCompleteMsg{err: nil}
+		return stepCompleteMsg{err: fmt.Errorf("unknown step: %d", m.currentStep)}
 	}
 }
 

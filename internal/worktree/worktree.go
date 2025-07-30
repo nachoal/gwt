@@ -99,7 +99,7 @@ func CopyFiles(srcRoot, destRoot string, files []string) error {
 
 		// Create destination directory
 		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-			return err
+			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dest), err)
 		}
 
 		// Check if source is a directory
@@ -114,14 +114,16 @@ func CopyFiles(srcRoot, destRoot string, files []string) error {
 		if info.IsDir() {
 			// Copy directory recursively
 			cmd := exec.Command("cp", "-r", src, dest)
+			cmd.Stderr = os.Stderr // Show error output
 			if err := cmd.Run(); err != nil {
-				return err
+				return fmt.Errorf("failed to copy directory %s to %s: %w", src, dest, err)
 			}
 		} else {
 			// Copy single file
 			cmd := exec.Command("cp", src, dest)
+			cmd.Stderr = os.Stderr // Show error output
 			if err := cmd.Run(); err != nil {
-				return err
+				return fmt.Errorf("failed to copy file %s to %s: %w", src, dest, err)
 			}
 		}
 	}
@@ -132,10 +134,11 @@ func RunSetupCommands(workdir string, commands []string) error {
 	for _, command := range commands {
 		cmd := exec.Command("sh", "-c", command)
 		cmd.Dir = workdir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run '%s': %w", command, err)
+		// Capture output to avoid interfering with TUI
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Include output in error for debugging
+			return fmt.Errorf("failed to run '%s': %w\nOutput: %s", command, err, string(output))
 		}
 	}
 	return nil

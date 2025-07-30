@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -57,6 +58,10 @@ func LoadConfig() (*Config, error) {
 	if config.Settings.Root == "" {
 		homeDir, _ := os.UserHomeDir()
 		config.Settings.Root = filepath.Join(homeDir, "git-worktrees")
+	} else if strings.HasPrefix(config.Settings.Root, "~/") {
+		// Expand tilde to home directory
+		homeDir, _ := os.UserHomeDir()
+		config.Settings.Root = filepath.Join(homeDir, config.Settings.Root[2:])
 	}
 
 	return &config, nil

@@ -29,11 +29,23 @@ var cleanCmd = &cobra.Command{
 			return fmt.Errorf("auto clean is disabled in config")
 		}
 
-		// Get list of merged branches
-		mergedCmd := exec.Command("git", "branch", "--merged", "main")
+		// Fetch latest remote state to ensure we see PR merges
+		fetchCmd := exec.Command("git", "fetch", "origin")
+		if err := fetchCmd.Run(); err != nil {
+			// Continue even if fetch fails (might be offline)
+			fmt.Println("Warning: Could not fetch latest from origin")
+		}
+
+		// Get list of merged branches (check against origin/main to catch PR merges)
+		mergedCmd := exec.Command("git", "branch", "--merged", "origin/main")
 		output, err := mergedCmd.Output()
 		if err != nil {
-			return err
+			// Fallback to local main if origin/main doesn't exist
+			mergedCmd = exec.Command("git", "branch", "--merged", "main")
+			output, err = mergedCmd.Output()
+			if err != nil {
+				return err
+			}
 		}
 
 		mergedBranches := make(map[string]bool)
