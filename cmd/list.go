@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nachoal/gwt/internal/ui"
 	"github.com/spf13/cobra"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var listCmd = &cobra.Command{

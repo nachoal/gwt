@@ -14,13 +14,13 @@ var removeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		branchName := args[0]
 		force, _ := cmd.Flags().GetBool("force")
-		
+
 		// Find the worktree path
 		worktrees, err := worktree.List()
 		if err != nil {
 			return err
 		}
-		
+
 		var targetPath string
 		for _, wt := range worktrees {
 			if wt.Branch == branchName {
@@ -28,16 +28,16 @@ var removeCmd = &cobra.Command{
 				break
 			}
 		}
-		
+
 		if targetPath == "" {
 			return fmt.Errorf("worktree for branch '%s' not found", branchName)
 		}
-		
+
 		// Remove the worktree
 		if err := worktree.Remove(targetPath, force); err != nil {
 			return err
 		}
-		
+
 		fmt.Println(successStyle.Render("✓") + " Removed worktree: " + fileStyle.Render(branchName))
 		return nil
 	},

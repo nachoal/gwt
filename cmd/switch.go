@@ -13,13 +13,13 @@ var switchCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		branchName := args[0]
-		
+
 		// Find the worktree path
 		worktrees, err := worktree.List()
 		if err != nil {
 			return err
 		}
-		
+
 		var targetPath string
 		for _, wt := range worktrees {
 			if wt.Branch == branchName {
@@ -27,11 +27,11 @@ var switchCmd = &cobra.Command{
 				break
 			}
 		}
-		
+
 		if targetPath == "" {
 			return fmt.Errorf("worktree for branch '%s' not found", branchName)
 		}
-		
+
 		// Output the path for shell function to cd to
 		fmt.Println(targetPath)
 		return nil

@@ -9,7 +9,7 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("205"))
-	
+
 	infoStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 )

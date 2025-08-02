@@ -33,11 +33,43 @@ func GetProjectName() (string, error) {
 	return projectName, nil
 }
 
+func GetDefaultBranch() (string, error) {
+	// Try to get the default branch from git config
+	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	output, err := cmd.Output()
+	if err == nil {
+		// Extract branch name from refs/remotes/origin/main format
+		branch := strings.TrimSpace(string(output))
+		parts := strings.Split(branch, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1], nil
+		}
+	}
+
+	// Fallback: check if common default branches exist
+	commonDefaults := []string{"main", "master", "develop"}
+	for _, branch := range commonDefaults {
+		cmd := exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("origin/%s", branch))
+		if err := cmd.Run(); err == nil {
+			return branch, nil
+		}
+	}
+
+	// Last resort: use main
+	return "main", nil
+}
+
 func GetWorktreePath(root, projectName, branchName string) string {
 	return filepath.Join(root, projectName, branchName)
 }
 
 func Create(branchName, fromBranch, targetPath string) error {
+	// Create parent directory if it doesn't exist
+	parentDir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
 	// Check if branch exists
 	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
 	if err := checkCmd.Run(); err == nil {
@@ -60,7 +92,7 @@ func List() ([]Worktree, error) {
 
 	var worktrees []Worktree
 	lines := strings.Split(string(output), "\n")
-	
+
 	var current Worktree
 	for _, line := range lines {
 		if strings.HasPrefix(line, "worktree ") {
@@ -87,7 +119,7 @@ func Remove(path string, force bool) error {
 		args = append(args, "--force")
 	}
 	args = append(args, path)
-	
+
 	cmd := exec.Command("git", args...)
 	return cmd.Run()
 }

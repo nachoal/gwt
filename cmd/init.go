@@ -13,7 +13,7 @@ var (
 	successStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42")).
 			Bold(true)
-	
+
 	fileStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86"))
 )

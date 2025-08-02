@@ -10,19 +10,19 @@ import (
 )
 
 type listModel struct {
-	table          table.Model
-	worktrees      []worktree.Worktree
-	err            error
-	quitting       bool
-	confirmDelete  bool
-	deleteTarget   string
+	table         table.Model
+	worktrees     []worktree.Worktree
+	err           error
+	quitting      bool
+	confirmDelete bool
+	deleteTarget  string
 }
 
 var (
 	selectedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("205")).
 			Bold(true)
-	
+
 	headerStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("99")).
 			Bold(true)
@@ -106,12 +106,12 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.worktrees = msg.worktrees
-		
+
 		rows := []table.Row{}
 		for _, wt := range m.worktrees {
 			status := "Clean"
 			// TODO: Check git status
-			
+
 			// Make paths relative for display
 			path := wt.Path
 			if strings.Contains(path, "git-worktrees") {
@@ -120,12 +120,12 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					path = "~/" + parts[1]
 				}
 			}
-			
+
 			rows = append(rows, table.Row{wt.Branch, path, status})
 		}
 		m.table.SetRows(rows)
 		return m, nil
-	
+
 	case worktreeDeletedMsg:
 		m.deleteTarget = ""
 		if msg.err != nil {
@@ -147,13 +147,13 @@ func (m listModel) View() string {
 	}
 
 	s := titleStyle.Render("Git Worktrees") + "\n\n"
-	
+
 	if len(m.worktrees) == 0 {
 		s += infoStyle.Render("No worktrees found for this project") + "\n"
 		s += infoStyle.Render("Create one with: gwt new <branch-name>") + "\n"
 	} else {
 		s += m.table.View() + "\n\n"
-		
+
 		if m.confirmDelete {
 			s += "\n" + lipgloss.NewStyle().
 				Bold(true).

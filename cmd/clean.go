@@ -79,7 +79,7 @@ var cleanCmd = &cobra.Command{
 		if removedCount == 0 {
 			fmt.Println(infoStyle.Render("No merged worktrees to clean"))
 		} else {
-			fmt.Printf("\n%s Cleaned %d worktree(s)\n", 
+			fmt.Printf("\n%s Cleaned %d worktree(s)\n",
 				successStyle.Render("✓"), removedCount)
 		}
 
