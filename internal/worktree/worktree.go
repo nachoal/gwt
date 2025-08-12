@@ -1,11 +1,13 @@
 package worktree
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
+    "fmt"
+    "io"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "strings"
+    "time"
 )
 
 type Worktree struct {
@@ -163,15 +165,55 @@ func CopyFiles(srcRoot, destRoot string, files []string) error {
 }
 
 func RunSetupCommands(workdir string, commands []string) error {
-	for _, command := range commands {
-		cmd := exec.Command("sh", "-c", command)
-		cmd.Dir = workdir
-		// Capture output to avoid interfering with TUI
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			// Include output in error for debugging
-			return fmt.Errorf("failed to run '%s': %w\nOutput: %s", command, err, string(output))
-		}
-	}
-	return nil
+    for _, command := range commands {
+        cmd := exec.Command("sh", "-c", command)
+        cmd.Dir = workdir
+        // Capture output to avoid interfering with TUI
+        output, err := cmd.CombinedOutput()
+        if err != nil {
+            // Include output in error for debugging
+            return fmt.Errorf("failed to run '%s': %w\nOutput: %s", command, err, string(output))
+        }
+    }
+    return nil
+}
+
+// RunSetupCommandsOpts runs setup commands with optional verbose output and timing.
+// If verbose is true, command stdout/stderr are streamed to out.
+// If timed is true, a short summary line is written showing the duration per command.
+func RunSetupCommandsOpts(workdir string, commands []string, verbose bool, timed bool, out io.Writer) error {
+    if out == nil {
+        out = os.Stdout
+    }
+    for _, command := range commands {
+        var start time.Time
+        if timed || verbose {
+            fmt.Fprintf(out, "→ %s\n", command)
+            start = time.Now()
+        }
+        cmd := exec.Command("sh", "-c", command)
+        cmd.Dir = workdir
+        if verbose {
+            cmd.Stdout = out
+            cmd.Stderr = out
+            if err := cmd.Run(); err != nil {
+                if timed {
+                    fmt.Fprintf(out, "✗ failed in %s\n", time.Since(start).Round(time.Millisecond))
+                }
+                return err
+            }
+        } else {
+            // Non-verbose: still execute but suppress output
+            if err := cmd.Run(); err != nil {
+                if timed {
+                    fmt.Fprintf(out, "✗ failed in %s\n", time.Since(start).Round(time.Millisecond))
+                }
+                return err
+            }
+        }
+        if timed || verbose {
+            fmt.Fprintf(out, "✓ done in %s\n", time.Since(start).Round(time.Millisecond))
+        }
+    }
+    return nil
 }
