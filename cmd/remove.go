@@ -33,12 +33,21 @@ var removeCmd = &cobra.Command{
 			return fmt.Errorf("worktree for branch '%s' not found", branchName)
 		}
 
-		// Remove the worktree
+		// Determine common git dir before removal (branch is checked out here)
+		commonGitDir, _ := worktree.GetCommonGitDir(targetPath)
+
+		// Remove the worktree first to unlock the branch
 		if err := worktree.Remove(targetPath, force); err != nil {
 			return err
 		}
 
-		fmt.Println(successStyle.Render("✓") + " Removed worktree: " + fileStyle.Render(branchName))
+		// Also delete the branch (safe delete unless --force)
+		if err := worktree.DeleteBranchWithGitDir(commonGitDir, branchName, force); err != nil {
+			// Warn but don't fail the command if branch deletion fails (e.g., unmerged)
+			fmt.Println(infoStyle.Render("Note: could not delete branch ") + fileStyle.Render(branchName))
+		}
+
+		fmt.Println(successStyle.Render("✓") + " Removed worktree and branch: " + fileStyle.Render(branchName))
 		return nil
 	},
 }

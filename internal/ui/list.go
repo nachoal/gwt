@@ -88,7 +88,7 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if targetPath != "" {
 					m.confirmDelete = false
-					return m, m.deleteWorktree(targetPath)
+					return m, m.deleteWorktree(targetPath, m.deleteTarget)
 				}
 			}
 			return m, nil
@@ -185,9 +185,16 @@ type worktreeDeletedMsg struct {
 	err error
 }
 
-func (m listModel) deleteWorktree(path string) tea.Cmd {
+func (m listModel) deleteWorktree(path string, branch string) tea.Cmd {
 	return func() tea.Msg {
+		// Compute common git dir before removal
+		common, _ := worktree.GetCommonGitDir(path)
+		// Remove worktree first
 		err := worktree.Remove(path, false)
+		if err == nil {
+			// Attempt to delete branch (safe -d). Ignore errors to keep UX smooth.
+			_ = worktree.DeleteBranchWithGitDir(common, branch, false)
+		}
 		return worktreeDeletedMsg{err: err}
 	}
 }

@@ -1,13 +1,13 @@
 package worktree
 
 import (
-    "fmt"
-    "io"
-    "os"
-    "os/exec"
-    "path/filepath"
-    "strings"
-    "time"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
 type Worktree struct {
@@ -126,6 +126,55 @@ func Remove(path string, force bool) error {
 	return cmd.Run()
 }
 
+// GetCommonGitDir returns the common git directory for the given worktree path.
+func GetCommonGitDir(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "rev-parse", "--git-common-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	dir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(path, dir)
+	}
+	return dir, nil
+}
+
+// DeleteBranchFromWorktreePath deletes the branch from the parent repository using the
+// worktree's common git directory. If force is true, uses -D; else uses -d.
+// If the branch does not exist, it returns nil.
+func DeleteBranchFromWorktreePath(worktreePath, branch string, force bool) error {
+	if branch == "" {
+		return nil
+	}
+	common, err := GetCommonGitDir(worktreePath)
+	if err != nil {
+		return err
+	}
+	return DeleteBranchWithGitDir(common, branch, force)
+}
+
+// DeleteBranchWithGitDir deletes a branch using a known common git dir.
+func DeleteBranchWithGitDir(commonGitDir, branch string, force bool) error {
+	if branch == "" || commonGitDir == "" {
+		return nil
+	}
+	// Check if branch exists
+	check := exec.Command("git", "--git-dir", commonGitDir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	if err := check.Run(); err != nil {
+		// Not found
+		return nil
+	}
+	args := []string{"--git-dir", commonGitDir, "branch"}
+	if force {
+		args = append(args, "-D", branch)
+	} else {
+		args = append(args, "-d", branch)
+	}
+	cmd := exec.Command("git", args...)
+	return cmd.Run()
+}
+
 func CopyFiles(srcRoot, destRoot string, files []string) error {
 	for _, file := range files {
 		src := filepath.Join(srcRoot, file)
@@ -165,55 +214,55 @@ func CopyFiles(srcRoot, destRoot string, files []string) error {
 }
 
 func RunSetupCommands(workdir string, commands []string) error {
-    for _, command := range commands {
-        cmd := exec.Command("sh", "-c", command)
-        cmd.Dir = workdir
-        // Capture output to avoid interfering with TUI
-        output, err := cmd.CombinedOutput()
-        if err != nil {
-            // Include output in error for debugging
-            return fmt.Errorf("failed to run '%s': %w\nOutput: %s", command, err, string(output))
-        }
-    }
-    return nil
+	for _, command := range commands {
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Dir = workdir
+		// Capture output to avoid interfering with TUI
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Include output in error for debugging
+			return fmt.Errorf("failed to run '%s': %w\nOutput: %s", command, err, string(output))
+		}
+	}
+	return nil
 }
 
 // RunSetupCommandsOpts runs setup commands with optional verbose output and timing.
 // If verbose is true, command stdout/stderr are streamed to out.
 // If timed is true, a short summary line is written showing the duration per command.
 func RunSetupCommandsOpts(workdir string, commands []string, verbose bool, timed bool, out io.Writer) error {
-    if out == nil {
-        out = os.Stdout
-    }
-    for _, command := range commands {
-        var start time.Time
-        if timed || verbose {
-            fmt.Fprintf(out, "→ %s\n", command)
-            start = time.Now()
-        }
-        cmd := exec.Command("sh", "-c", command)
-        cmd.Dir = workdir
-        if verbose {
-            cmd.Stdout = out
-            cmd.Stderr = out
-            if err := cmd.Run(); err != nil {
-                if timed {
-                    fmt.Fprintf(out, "✗ failed in %s\n", time.Since(start).Round(time.Millisecond))
-                }
-                return err
-            }
-        } else {
-            // Non-verbose: still execute but suppress output
-            if err := cmd.Run(); err != nil {
-                if timed {
-                    fmt.Fprintf(out, "✗ failed in %s\n", time.Since(start).Round(time.Millisecond))
-                }
-                return err
-            }
-        }
-        if timed || verbose {
-            fmt.Fprintf(out, "✓ done in %s\n", time.Since(start).Round(time.Millisecond))
-        }
-    }
-    return nil
+	if out == nil {
+		out = os.Stdout
+	}
+	for _, command := range commands {
+		var start time.Time
+		if timed || verbose {
+			fmt.Fprintf(out, "→ %s\n", command)
+			start = time.Now()
+		}
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Dir = workdir
+		if verbose {
+			cmd.Stdout = out
+			cmd.Stderr = out
+			if err := cmd.Run(); err != nil {
+				if timed {
+					fmt.Fprintf(out, "✗ failed in %s\n", time.Since(start).Round(time.Millisecond))
+				}
+				return err
+			}
+		} else {
+			// Non-verbose: still execute but suppress output
+			if err := cmd.Run(); err != nil {
+				if timed {
+					fmt.Fprintf(out, "✗ failed in %s\n", time.Since(start).Round(time.Millisecond))
+				}
+				return err
+			}
+		}
+		if timed || verbose {
+			fmt.Fprintf(out, "✓ done in %s\n", time.Since(start).Round(time.Millisecond))
+		}
+	}
+	return nil
 }
