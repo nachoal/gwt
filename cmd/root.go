@@ -18,7 +18,10 @@ var rootCmd = &cobra.Command{
 	Use:   "gwt",
 	Short: "A beautiful git worktree manager",
 	Long: titleStyle.Render("gwt") + " - Git Worktree Manager\n\n" +
-		infoStyle.Render("Simplify your git worktree workflow with automatic setup and management"),
+		infoStyle.Render("Simplify your git worktree workflow with automatic setup and management") + "\n\n" +
+		infoStyle.Render("Enable shell integration via 'gwt shell' to get helpers:") + "\n" +
+		infoStyle.Render("  • gwt new <branch> -c [issue <url> | <prompt>]  (cd + run 'claude')") + "\n" +
+		infoStyle.Render("  • gwt done <branch> [base]                       (pull base, remove worktree)"),
 }
 
 func Execute() error {

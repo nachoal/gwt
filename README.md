@@ -36,7 +36,11 @@ gwt list
 
 4. Enable shell integration (add to ~/.zshrc):
 ```bash
-eval "$(gwt shell)"
+# One-time install (zsh/bash):
+gwt shell --install
+# Or, manual:
+# echo 'eval "$(gwt shell)"' >> ~/.zshrc
+# Then reload your shell or: source ~/.zshrc
 ```
 
 5. Switch between worktrees:
@@ -76,3 +80,12 @@ settings:
 - `gwt switch <branch>` - Change to worktree directory
 - `gwt remove <branch>` - Delete a worktree
 - `gwt clean` - Remove merged worktrees
+
+With shell integration enabled, quality-of-life helpers are available:
+- `gwt new feature/foo -c` → after creation, cd to the new worktree and run your `claude` alias
+- `gwt new feature/foo -c "plan the changes"` → runs `claude "plan the changes"`
+- `gwt new feature/foo -c issue https://link` → runs `claude "/issue-analysis https://link"`
+- `gwt done <branch> [base]` → cd to base, `git pull --ff-only`, then remove the `<branch>` worktree
+  - Tip: When run inside a worktree, `gwt done` can be used with no args; it infers the current branch and default base.
+
+Tip: If you previously had an alias named `gwt`, the installed function safely overrides it. If you prefer manual install, ensure the `eval "$(gwt shell)"` line appears after your aliases in your rc.

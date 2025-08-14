@@ -14,7 +14,17 @@ import (
 var newCmd = &cobra.Command{
 	Use:   "new <branch-name>",
 	Short: "Create a new worktree",
-	Args:  cobra.ExactArgs(1),
+	Long: "Create a new worktree for the current project.\n\n" +
+		"Tip: With shell integration enabled (eval \"$(gwt shell)\"), you can use:\n" +
+		"  • gwt new <branch> -c                # cd into the new worktree and run your 'claude' alias\n" +
+		"  • gwt new <branch> -c \"prompt\"     # run 'claude \"prompt\"'\n" +
+		"  • gwt new <branch> -c issue <url>   # run 'claude \"/issue-analysis <url>\"'\n\n" +
+		"Note: -c is provided by the shell wrapper, not by the gwt binary.",
+	Example: "  gwt new feature/foo\n" +
+		"  gwt new feature/foo -f develop\n" +
+		"  # With shell integration:\n" +
+		"  gwt new fix/bug -c issue https://example/issue/123\n",
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		branchName := args[0]
 		fromBranch, _ := cmd.Flags().GetString("from")
