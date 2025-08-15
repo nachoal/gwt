@@ -29,6 +29,8 @@ function gwt {
       wt_path=$(command gwt switch "$@")
       if [ $? -eq 0 ] && [ -n "$wt_path" ]; then
         cd "$wt_path"
+        # Emit OSC 7 to inform WezTerm of directory change
+        printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
       fi
       ;;
 
@@ -101,6 +103,8 @@ function gwt {
       wt_path=$(command gwt switch "$branch")
       if [ $? -eq 0 ] && [ -n "$wt_path" ]; then
         cd "$wt_path" || return $?
+        # Emit OSC 7 to inform WezTerm of directory change
+        printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
       else
         return 1
       fi
@@ -155,6 +159,8 @@ function gwt {
         return 1
       fi
       cd "$wt_path" || return $?
+      # Emit OSC 7 to inform WezTerm of directory change
+      printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
       git pull --ff-only || return $?
       command gwt remove "$branch"
       ;;
