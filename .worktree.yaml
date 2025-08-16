@@ -1,10 +1,10 @@
 version: 1
 copy:
-- .env
-- .env.local
+    - .env
+    - .env.local
 setup:
-- go mod download
+    - npm install
 settings:
-  root: ~/git-worktrees
-  auto_clean_merged: true
-  confirm_delete: true
+    root: ~/git-worktrees
+    auto_clean_merged: true
+    confirm_delete: true
