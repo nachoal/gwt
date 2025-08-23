@@ -41,81 +41,79 @@ func DefaultConfig() *Config {
 }
 
 func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(".worktree.yaml")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return DefaultConfig(), nil
+	// Load file if present; otherwise start from defaults, but always normalize.
+	var cfg Config
+	if data, err := os.ReadFile(".worktree.yaml"); err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return nil, err
 		}
-		return nil, err
-	}
-
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
+	} else {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		// No config file: use defaults and normalize below
+		cfg = *DefaultConfig()
 	}
 
 	needsMigration := false
-	originalRoot := config.Settings.Root
+	originalRoot := cfg.Settings.Root
 
-	// Set defaults for missing values
-	if config.Settings.Root == "" {
-		homeDir, _ := os.UserHomeDir()
-		config.Settings.Root = filepath.Join(homeDir, "git-worktrees")
-	} else if strings.HasPrefix(config.Settings.Root, "~/") {
+	// Set defaults for missing values and expand to absolute paths for runtime use
+	homeDir, _ := os.UserHomeDir()
+	if cfg.Settings.Root == "" {
+		cfg.Settings.Root = filepath.Join(homeDir, "git-worktrees")
+	} else if strings.HasPrefix(cfg.Settings.Root, "~/") {
 		// Expand tilde to home directory
-		homeDir, _ := os.UserHomeDir()
-		config.Settings.Root = filepath.Join(homeDir, config.Settings.Root[2:])
-	} else if strings.HasPrefix(config.Settings.Root, "/Users/") || strings.HasPrefix(config.Settings.Root, "/home/") {
+		cfg.Settings.Root = filepath.Join(homeDir, cfg.Settings.Root[2:])
+	} else if strings.HasPrefix(cfg.Settings.Root, "/Users/") || strings.HasPrefix(cfg.Settings.Root, "/home/") {
 		// Detect absolute paths that should be portable
-		homeDir, _ := os.UserHomeDir()
-		
 		// Check if this path points to a user's home directory
-		if strings.HasPrefix(config.Settings.Root, "/Users/") {
+		if strings.HasPrefix(cfg.Settings.Root, "/Users/") {
 			// macOS path format: /Users/username/...
-			parts := strings.SplitN(config.Settings.Root, "/", 4)
+			parts := strings.SplitN(cfg.Settings.Root, "/", 4)
 			if len(parts) >= 4 {
 				// Convert /Users/username/path to ~/path
 				relativePath := parts[3]
 				if strings.HasPrefix(relativePath, "git-worktrees") {
-					config.Settings.Root = filepath.Join(homeDir, relativePath)
+					cfg.Settings.Root = filepath.Join(homeDir, relativePath)
 					needsMigration = true
 				}
 			}
-		} else if strings.HasPrefix(config.Settings.Root, "/home/") {
+		} else if strings.HasPrefix(cfg.Settings.Root, "/home/") {
 			// Linux path format: /home/username/...
-			parts := strings.SplitN(config.Settings.Root, "/", 4)
+			parts := strings.SplitN(cfg.Settings.Root, "/", 4)
 			if len(parts) >= 4 {
 				// Convert /home/username/path to ~/path
 				relativePath := parts[3]
 				if strings.HasPrefix(relativePath, "git-worktrees") {
-					config.Settings.Root = filepath.Join(homeDir, relativePath)
+					cfg.Settings.Root = filepath.Join(homeDir, relativePath)
 					needsMigration = true
 				}
 			}
 		}
 	}
 
-	// Auto-migrate config if we detected non-portable paths
+	// Auto-migrate config if we detected non-portable paths (only relevant if a file exists)
 	if needsMigration {
 		fmt.Fprintf(os.Stderr, "Migrating config: %s → ~/git-worktrees\n", originalRoot)
-		if err := SaveConfig(&config); err != nil {
+		if err := SaveConfig(&cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Could not save migrated config: %v\n", err)
 		}
 	}
 
-	return &config, nil
+	return &cfg, nil
 }
 
 func SaveConfig(config *Config) error {
 	// Create a copy to avoid modifying the original
 	configCopy := *config
-	
+
 	// Contract home directory to ~ for portability
 	homeDir, _ := os.UserHomeDir()
 	if strings.HasPrefix(configCopy.Settings.Root, homeDir) {
 		configCopy.Settings.Root = "~" + configCopy.Settings.Root[len(homeDir):]
 	}
-	
+
 	data, err := yaml.Marshal(configCopy)
 	if err != nil {
 		return err
