@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -187,10 +188,29 @@ type worktreeDeletedMsg struct {
 
 func (m listModel) deleteWorktree(path string, branch string) tea.Cmd {
 	return func() tea.Msg {
-		// Compute common git dir before removal
+		// Compute common git dir and main worktree before removal
 		common, _ := worktree.GetCommonGitDir(path)
-		// Remove worktree first
+		mainWT, _ := worktree.FindMainWorktree()
+
+		// Move out of the worktree being deleted so that subsequent
+		// git commands (e.g. reload) don't run in a deleted cwd.
+		if mainWT != "" {
+			cwd, _ := os.Getwd()
+			if cwd == path || strings.HasPrefix(cwd, path+"/") {
+				os.Chdir(mainWT)
+			}
+		}
+
+		// Remove worktree
 		err := worktree.Remove(path, false)
+		if err != nil {
+			// If git refuses because the worktree is dirty or has untracked files,
+			// fall back to a forced removal after the user has confirmed.
+			msg := err.Error()
+			if strings.Contains(msg, "contains modified or untracked files") || strings.Contains(msg, "use --force") || strings.Contains(msg, "is not clean") {
+				err = worktree.Remove(path, true)
+			}
+		}
 		if err == nil {
 			// Attempt to delete branch (safe -d). Ignore errors to keep UX smooth.
 			_ = worktree.DeleteBranchWithGitDir(common, branch, false)
