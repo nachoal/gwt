@@ -85,8 +85,35 @@ func Create(branchName, fromBranch, targetPath string) error {
 	return cmd.Run()
 }
 
+// FindMainWorktree returns the path to the main worktree (the original clone).
+// It works from any worktree or the main repo itself.
+func FindMainWorktree() (string, error) {
+	// git rev-parse --git-common-dir gives the shared .git dir.
+	// From that we can derive the main worktree root.
+	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	commonDir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(commonDir) {
+		cwd, _ := os.Getwd()
+		commonDir = filepath.Join(cwd, commonDir)
+	}
+	// The common dir is typically <main-worktree>/.git
+	// filepath.Dir gives us the main worktree root.
+	mainWorktree := filepath.Dir(commonDir)
+	return mainWorktree, nil
+}
+
 func List() ([]Worktree, error) {
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	// Discover the main worktree so the command works from any worktree
+	// or even when a worktree's state is broken.
+	mainWT, err := FindMainWorktree()
+	if err != nil {
+		return nil, fmt.Errorf("not in a git repository: %w", err)
+	}
+	cmd := exec.Command("git", "-C", mainWT, "worktree", "list", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -116,6 +143,10 @@ func List() ([]Worktree, error) {
 }
 
 func Remove(path string, force bool) error {
+	// Run from the main worktree so that removing the current worktree
+	// (i.e. the cwd) does not fail because git can't remove its own cwd.
+	mainWT, _ := FindMainWorktree()
+
 	args := []string{"worktree", "remove"}
 	if force {
 		args = append(args, "--force")
@@ -123,7 +154,17 @@ func Remove(path string, force bool) error {
 	args = append(args, path)
 
 	cmd := exec.Command("git", args...)
-	return cmd.Run()
+	if mainWT != "" {
+		cmd.Dir = mainWT
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if len(output) > 0 {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return err
+	}
+	return nil
 }
 
 // GetCommonGitDir returns the common git directory for the given worktree path.
@@ -195,8 +236,10 @@ func CopyFiles(srcRoot, destRoot string, files []string) error {
 		}
 
 		if info.IsDir() {
-			// Copy directory recursively
-			cmd := exec.Command("cp", "-r", src, dest)
+			// Copy directory contents recursively.
+			// Use src/. so that if dest already exists (e.g. from git checkout),
+			// contents are merged into it instead of creating a nested subdirectory.
+			cmd := exec.Command("cp", "-r", src+"/.", dest)
 			cmd.Stderr = os.Stderr // Show error output
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to copy directory %s to %s: %w", src, dest, err)
