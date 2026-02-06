@@ -266,7 +266,7 @@ var shellCmd = &cobra.Command{
 			fmt.Printf("Removed gwt shell integration from %s\n", rc)
 			return nil
 		}
-		fmt.Print(shellFunction)
+		fmt.Printf("%s", shellFunction)
 		return nil
 	},
 }
