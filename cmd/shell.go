@@ -158,9 +158,8 @@ function gwt {
         fi
         if [ -z "$base_branch" ]; then
           for b in main master develop; do
-            local _p
-            _p=$(command gwt switch "$b" 2>/dev/null)
-            if [ $? -eq 0 ] && [ -n "$_p" ]; then
+            git rev-parse --verify "refs/remotes/origin/$b" >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
               base_branch="$b"
               break
             fi
@@ -171,16 +170,45 @@ function gwt {
         echo "gwt: could not determine base branch; specify explicitly" >&2
         return 1
       fi
-      local wt_path
-      wt_path=$(command gwt switch "$base_branch")
-      if [ $? -ne 0 ] || [ -z "$wt_path" ]; then
-        echo "gwt: base worktree '$base_branch' not found" >&2
+      if [ "$branch" = "$base_branch" ]; then
+        echo "gwt: refusing to remove base branch '$base_branch'" >&2
         return 1
       fi
-      cd "$wt_path" || return $?
-      # Emit OSC 7 to inform WezTerm of directory change
-      printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
-      git pull --ff-only || return $?
+
+      # Prefer a worktree that actually has the base branch checked out, so we
+      # can safely run git pull --ff-only without changing any other worktree.
+      local wt_path
+      wt_path=$(command gwt switch "$base_branch" 2>/dev/null)
+      if [ $? -eq 0 ] && [ -n "$wt_path" ]; then
+        cd "$wt_path" || return $?
+        # Emit OSC 7 to inform WezTerm of directory change
+        printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
+        git pull --ff-only || return $?
+      else
+        # Fallback: if no worktree has the base branch checked out (common when
+        # the main worktree is on a feature branch), operate from the main
+        # worktree and fast-forward the base branch ref without switching.
+        local _common
+        _common=$(git rev-parse --git-common-dir 2>/dev/null)
+        if [ -z "$_common" ]; then
+          echo "gwt: not in a git repository" >&2
+          return 1
+        fi
+        if [ "${_common#/}" = "$_common" ]; then
+          _common="$PWD/$_common"
+        fi
+        local _main_wt
+        _main_wt=$(cd "$(dirname "$_common")" 2>/dev/null && pwd)
+        if [ -z "$_main_wt" ]; then
+          echo "gwt: could not determine main worktree path" >&2
+          return 1
+        fi
+        cd "$_main_wt" || return $?
+        # Emit OSC 7 to inform WezTerm of directory change
+        printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
+        # Fast-forward-only update of the local base branch ref.
+        git fetch origin "$base_branch:$base_branch" || return $?
+      fi
       command gwt remove "$branch"
       ;;
 
