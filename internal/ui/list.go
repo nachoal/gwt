@@ -15,6 +15,7 @@ type listModel struct {
 	worktrees     []worktree.Worktree
 	err           error
 	quitting      bool
+	selectedPath  string
 	confirmDelete bool
 	deleteTarget  string
 }
@@ -64,7 +65,21 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "enter":
-			// TODO: Add switch functionality
+			if m.confirmDelete {
+				return m, nil
+			}
+			selectedRow := m.table.SelectedRow()
+			if len(selectedRow) == 0 {
+				return m, nil
+			}
+			selectedBranch := selectedRow[0]
+			for _, wt := range m.worktrees {
+				if wt.Branch == selectedBranch {
+					m.selectedPath = wt.Path
+					m.quitting = true
+					return m, tea.Quit
+				}
+			}
 			return m, nil
 		case "d":
 			if m.confirmDelete {
@@ -162,11 +177,15 @@ func (m listModel) View() string {
 				Render("⚠️  Delete worktree '"+m.deleteTarget+"'?") + "\n"
 			s += infoStyle.Render("y: Yes • n: No")
 		} else {
-			s += infoStyle.Render("↑/↓: Navigate • Enter: Switch • d: Delete • q: Quit")
+			s += infoStyle.Render("↑/↓: Navigate • Enter: Switch (shell integration for auto-cd) • d: Delete • q: Quit")
 		}
 	}
 
 	return s
+}
+
+func (m listModel) SelectedPath() string {
+	return m.selectedPath
 }
 
 type worktreesLoadedMsg struct {
