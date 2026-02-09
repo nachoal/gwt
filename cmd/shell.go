@@ -23,6 +23,25 @@ function gwt {
   fi
 
   case "$sub" in
+    ls|list)
+      shift
+      # Root listing prints a table; don't treat its output as a path.
+      for arg in "$@"; do
+        if [ "$arg" = "--root" ]; then
+          command gwt list "$@"
+          return $?
+        fi
+      done
+
+      local wt_path
+      wt_path=$(command gwt list "$@")
+      if [ $? -eq 0 ] && [ -n "$wt_path" ]; then
+        cd "$wt_path"
+        # Emit OSC 7 to inform WezTerm of directory change
+        printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
+      fi
+      ;;
+
     sw|switch)
       shift
       local wt_path
