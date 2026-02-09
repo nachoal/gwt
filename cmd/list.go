@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nachoal/gwt/internal/ui"
 	"github.com/nachoal/gwt/internal/worktree"
@@ -20,10 +22,22 @@ var listCmd = &cobra.Command{
 			return listFromRoot(overridePath)
 		}
 
-		// Default: Show interactive list (current repo only)
-		p := tea.NewProgram(ui.NewListModel())
-		_, err := p.Run()
-		return err
+		// Default: Show interactive list (current repo only).
+		// Render UI to stderr so stdout can be used for the selected path (shell integration).
+		p := tea.NewProgram(ui.NewListModel(), tea.WithInputTTY(), tea.WithOutput(os.Stderr))
+		m, err := p.Run()
+		if err != nil {
+			return err
+		}
+
+		// If the user selected a worktree (Enter), print its path to stdout.
+		type selectedPathModel interface{ SelectedPath() string }
+		if sp, ok := m.(selectedPathModel); ok {
+			if path := sp.SelectedPath(); path != "" {
+				fmt.Println(path)
+			}
+		}
+		return nil
 	},
 }
 
