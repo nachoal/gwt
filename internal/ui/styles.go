@@ -1,15 +1,23 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
-	titleStyle = lipgloss.NewStyle().
+	// Use stderr for style rendering so TUI styling still works when stdout is
+	// captured (e.g. shell integration using command substitution).
+	uiRenderer = lipgloss.NewRenderer(os.Stderr)
+
+	titleStyle = uiRenderer.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("205"))
 
-	infoStyle = lipgloss.NewStyle().
+	infoStyle = uiRenderer.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
-	errorStyle = lipgloss.NewStyle().
+	errorStyle = uiRenderer.NewStyle().
 			Foreground(lipgloss.Color("196"))
 )

@@ -20,11 +20,11 @@ type listModel struct {
 }
 
 var (
-	selectedStyle = lipgloss.NewStyle().
+	selectedStyle = uiRenderer.NewStyle().
 			Foreground(lipgloss.Color("205")).
 			Bold(true)
 
-	headerStyle = lipgloss.NewStyle().
+	headerStyle = uiRenderer.NewStyle().
 			Foreground(lipgloss.Color("99")).
 			Bold(true)
 )
@@ -156,7 +156,7 @@ func (m listModel) View() string {
 		s += m.table.View() + "\n\n"
 
 		if m.confirmDelete {
-			s += "\n" + lipgloss.NewStyle().
+			s += "\n" + uiRenderer.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("196")).
 				Render("⚠️  Delete worktree '"+m.deleteTarget+"'?") + "\n"

@@ -32,17 +32,17 @@ type createModel struct {
 }
 
 var (
-	checkMark = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓")
-	xMark     = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("✗")
-	bullet    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("•")
+	checkMark = uiRenderer.NewStyle().Foreground(lipgloss.Color("42")).Render("✓")
+	xMark     = uiRenderer.NewStyle().Foreground(lipgloss.Color("196")).Render("✗")
+	bullet    = uiRenderer.NewStyle().Foreground(lipgloss.Color("241")).Render("•")
 
-	stepStyle = lipgloss.NewStyle().PaddingLeft(2)
+	stepStyle = uiRenderer.NewStyle().PaddingLeft(2)
 )
 
 func NewCreateModel(branchName, fromBranch string) createModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = uiRenderer.NewStyle().Foreground(lipgloss.Color("205"))
 
 	return createModel{
 		branchName: branchName,
@@ -141,9 +141,9 @@ func (m createModel) View() string {
 		if m.err != nil {
 			s += errorStyle.Render("Failed to create worktree") + "\n"
 		} else {
-			s += lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")).
+			s += uiRenderer.NewStyle().Bold(true).Foreground(lipgloss.Color("42")).
 				Render("✓ Worktree created successfully!") + "\n\n"
-			s += lipgloss.NewStyle().Foreground(lipgloss.Color("86")).
+			s += uiRenderer.NewStyle().Foreground(lipgloss.Color("86")).
 				Render("📁 "+m.worktreePath) + "\n"
 		}
 	}
