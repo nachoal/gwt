@@ -12,10 +12,10 @@ import (
 
 // RootItem represents a worktree discovered under the configured root.
 type RootItem struct {
-	Project string
-	Branch  string
-	Path    string
-	Head    string
+	Project string `json:"project"`
+	Branch  string `json:"branch"`
+	Path    string `json:"path"`
+	Head    string `json:"head"`
 }
 
 // ListFromRoot scans the gwt root (or override) for worktrees and returns a flat list.

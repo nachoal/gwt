@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -30,6 +31,17 @@ var newCmd = &cobra.Command{
 		fromBranch, _ := cmd.Flags().GetString("from")
 		verbose, _ := cmd.Flags().GetBool("verbose")
 		timed, _ := cmd.Flags().GetBool("timed")
+		noTUI, _ := cmd.Flags().GetBool("no-tui")
+		plain, _ := cmd.Flags().GetBool("plain")
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
+		format, err := resolveOutputFormat(plain, jsonOut)
+		if err != nil {
+			return err
+		}
+		if format == outputFormatJSON && (verbose || timed) {
+			return fmt.Errorf("--json cannot be combined with --verbose or --timed")
+		}
 
 		// If no from branch specified, auto-detect the default branch
 		if cmd.Flags().Changed("from") == false {
@@ -39,14 +51,20 @@ var newCmd = &cobra.Command{
 			}
 		}
 
-		// If verbose or timed flags are set, run a non-TUI flow with console output
-		if verbose || timed {
-			return createWorktreeNonTUI(branchName, fromBranch, verbose, timed)
+		useTUI := !noTUI &&
+			format == outputFormatPretty &&
+			!verbose &&
+			!timed &&
+			hasInteractiveTTY()
+
+		// If non-interactive (or explicitly disabled), run the non-TUI flow.
+		if !useTUI {
+			return createWorktreeNonTUI(branchName, fromBranch, verbose, timed, format)
 		}
 
-		// Otherwise, run the TUI flow
-		p := tea.NewProgram(ui.NewCreateModel(branchName, fromBranch))
-		_, err := p.Run()
+		// Otherwise, run the TUI flow (render to stderr to keep stdout script-friendly).
+		p := tea.NewProgram(ui.NewCreateModel(branchName, fromBranch), tea.WithOutput(os.Stderr))
+		_, err = p.Run()
 		return err
 	},
 }
@@ -56,10 +74,25 @@ func init() {
 	newCmd.Flags().StringP("from", "f", "", "Base branch to create worktree from (auto-detected if not specified)")
 	newCmd.Flags().BoolP("verbose", "v", false, "Verbose output for setup commands (stream stdout/stderr)")
 	newCmd.Flags().BoolP("timed", "t", false, "Print each setup command and how long it took")
+	newCmd.Flags().Bool("no-tui", false, "Run without the TUI (auto-enabled when no interactive TTY is available)")
+	newCmd.Flags().Bool("plain", false, "Plain text output without styling")
+	newCmd.Flags().Bool("json", false, "Machine-readable JSON output")
 }
 
-func createWorktreeNonTUI(branchName, fromBranch string, verbose, timed bool) error {
-	fmt.Println(titleStyle.Render("Creating worktree (non-TUI)"))
+type createResult struct {
+	Status string `json:"status"`
+	Branch string `json:"branch"`
+	From   string `json:"from"`
+	Path   string `json:"path"`
+}
+
+func createWorktreeNonTUI(branchName, fromBranch string, verbose, timed bool, format outputFormat) error {
+	if format == outputFormatPretty {
+		fmt.Println(titleStyle.Render("Creating worktree (non-TUI)"))
+	}
+	if format == outputFormatPlain {
+		fmt.Println("Creating worktree")
+	}
 
 	// Step 1: Load configuration
 	cfg, err := config.LoadConfig()
@@ -73,15 +106,27 @@ func createWorktreeNonTUI(branchName, fromBranch string, verbose, timed bool) er
 		return err
 	}
 	targetPath := worktree.GetWorktreePath(cfg.Settings.Root, projectName, branchName)
-	fmt.Printf("→ Project: %s\n", projectName)
-	fmt.Printf("→ From: %s\n", fromBranch)
-	fmt.Printf("→ Path: %s\n", targetPath)
+	if format == outputFormatPretty {
+		fmt.Printf("→ Project: %s\n", projectName)
+		fmt.Printf("→ From: %s\n", fromBranch)
+		fmt.Printf("→ Path: %s\n", targetPath)
+	}
+	if format == outputFormatPlain {
+		fmt.Printf("project=%s\n", projectName)
+		fmt.Printf("from=%s\n", fromBranch)
+		fmt.Printf("path=%s\n", targetPath)
+	}
 
 	// Step 3: Create worktree
 	if err := worktree.Create(branchName, fromBranch, targetPath); err != nil {
 		return err
 	}
-	fmt.Println(successStyle.Render("✓ Worktree created"))
+	if format == outputFormatPretty {
+		fmt.Println(successStyle.Render("✓ Worktree created"))
+	}
+	if format == outputFormatPlain {
+		fmt.Println("worktree_created=true")
+	}
 
 	// Step 4: Copy files
 	mainPath, err := os.Getwd()
@@ -91,16 +136,48 @@ func createWorktreeNonTUI(branchName, fromBranch string, verbose, timed bool) er
 	if err := worktree.CopyFiles(mainPath, targetPath, cfg.Copy); err != nil {
 		return err
 	}
-	fmt.Println(successStyle.Render("✓ Files copied"))
+	if format == outputFormatPretty {
+		fmt.Println(successStyle.Render("✓ Files copied"))
+	}
+	if format == outputFormatPlain {
+		fmt.Println("files_copied=true")
+	}
 
 	// Step 5: Run setup commands
 	if len(cfg.Setup) > 0 {
-		fmt.Println(infoStyle.Render("Running setup commands:"))
-		if err := worktree.RunSetupCommandsOpts(targetPath, cfg.Setup, verbose, timed, os.Stdout); err != nil {
+		out := os.Stdout
+		if format == outputFormatJSON {
+			out = nil
+		} else if format == outputFormatPretty {
+			fmt.Println(infoStyle.Render("Running setup commands:"))
+		} else if format == outputFormatPlain {
+			fmt.Println("running_setup=true")
+		}
+		if err := worktree.RunSetupCommandsOpts(targetPath, cfg.Setup, verbose, timed, out); err != nil {
 			return err
 		}
 	}
-	fmt.Println(successStyle.Render("✓ Done"))
-	fmt.Println(fileStyle.Render(targetPath))
+
+	switch format {
+	case outputFormatPretty:
+		fmt.Println(successStyle.Render("✓ Done"))
+		fmt.Println(fileStyle.Render(targetPath))
+	case outputFormatPlain:
+		fmt.Println("status=ok")
+		fmt.Printf("path=%s\n", targetPath)
+	case outputFormatJSON:
+		result := createResult{
+			Status: "ok",
+			Branch: branchName,
+			From:   fromBranch,
+			Path:   targetPath,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

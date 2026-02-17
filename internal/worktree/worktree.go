@@ -11,9 +11,9 @@ import (
 )
 
 type Worktree struct {
-	Path   string
-	Branch string
-	Head   string
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+	Head   string `json:"head"`
 }
 
 func GetProjectName() (string, error) {
