@@ -29,6 +29,18 @@ type createModel struct {
 	loadedConfig   *config.Config
 	worktreePath   string
 	currentCommand string
+	setupCommands  []string
+	setupHistory   []setupCommandResult
+	setupIndex     int
+	setupRunning   bool
+	setupStartedAt time.Time
+	setupElapsed   time.Duration
+}
+
+type setupCommandResult struct {
+	command  string
+	duration time.Duration
+	err      error
 }
 
 var (
@@ -48,7 +60,7 @@ func NewCreateModel(branchName, fromBranch string) createModel {
 		branchName: branchName,
 		fromBranch: fromBranch,
 		steps: []step{
-			{name: "Loading configuration", status: "pending"},
+			{name: "Loading configuration", status: "running"},
 			{name: "Creating worktree", status: "pending"},
 			{name: "Copying files", status: "pending"},
 			{name: "Running setup commands", status: "pending"},
@@ -79,6 +91,89 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case setupStartMsg:
+		m.setupCommands = append([]string(nil), msg.commands...)
+		m.setupHistory = make([]setupCommandResult, 0, len(m.setupCommands))
+		m.setupIndex = 0
+		m.setupElapsed = 0
+
+		if len(m.setupCommands) == 0 {
+			m.steps[m.currentStep].status = "done"
+			m.currentStep++
+			if m.currentStep < len(m.steps) {
+				m.steps[m.currentStep].status = "running"
+				return m, m.runNextStep()
+			}
+
+			m.done = true
+			// Automatically quit after a short delay to show the success message
+			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				return tea.Quit()
+			})
+		}
+
+		m.currentCommand = m.setupCommands[m.setupIndex]
+		m.setupStartedAt = time.Now()
+		m.setupRunning = true
+		return m, tea.Batch(
+			m.runSetupCommand(m.currentCommand),
+			setupTickCmd(),
+		)
+
+	case setupTickMsg:
+		if !m.setupRunning {
+			return m, nil
+		}
+		m.setupElapsed = time.Since(m.setupStartedAt)
+		return m, setupTickCmd()
+
+	case setupCommandCompleteMsg:
+		m.setupRunning = false
+		m.setupElapsed = msg.duration
+		m.setupHistory = append(m.setupHistory, setupCommandResult{
+			command:  msg.command,
+			duration: msg.duration,
+			err:      msg.err,
+		})
+
+		if msg.err != nil {
+			m.steps[m.currentStep].status = "error"
+			m.steps[m.currentStep].err = msg.err
+			m.err = msg.err
+			m.done = true
+			// Automatically quit after showing error
+			return m, tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+				return tea.Quit()
+			})
+		}
+
+		m.setupIndex++
+		if m.setupIndex < len(m.setupCommands) {
+			m.currentCommand = m.setupCommands[m.setupIndex]
+			m.setupStartedAt = time.Now()
+			m.setupElapsed = 0
+			m.setupRunning = true
+			return m, tea.Batch(
+				m.runSetupCommand(m.currentCommand),
+				setupTickCmd(),
+			)
+		}
+
+		m.currentCommand = ""
+		m.setupElapsed = 0
+		m.steps[m.currentStep].status = "done"
+		m.currentStep++
+		if m.currentStep < len(m.steps) {
+			m.steps[m.currentStep].status = "running"
+			return m, m.runNextStep()
+		}
+
+		m.done = true
+		// Automatically quit after a short delay to show the success message
+		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+			return tea.Quit()
+		})
+
 	case stepCompleteMsg:
 		if msg.err != nil {
 			m.steps[m.currentStep].status = "error"
@@ -101,8 +196,8 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.steps[m.currentStep].status = "done"
 		m.currentStep++
-
 		if m.currentStep < len(m.steps) {
+			m.steps[m.currentStep].status = "running"
 			return m, m.runNextStep()
 		}
 
@@ -136,6 +231,37 @@ func (m createModel) View() string {
 		s += stepStyle.Render(line) + "\n"
 	}
 
+	if len(m.setupCommands) > 0 || len(m.setupHistory) > 0 {
+		s += "\n"
+		s += infoStyle.Render("Setup command trace") + "\n"
+		total := len(m.setupCommands)
+		for idx, result := range m.setupHistory {
+			icon := checkMark
+			if result.err != nil {
+				icon = xMark
+			}
+			s += stepStyle.Render(fmt.Sprintf(
+				"%s [%d/%d] %s (%s)",
+				icon,
+				idx+1,
+				total,
+				result.command,
+				formatSetupDuration(result.duration),
+			)) + "\n"
+		}
+
+		if m.setupRunning && m.currentCommand != "" {
+			s += stepStyle.Render(fmt.Sprintf(
+				"%s [%d/%d] %s (%s)",
+				m.spinner.View(),
+				m.setupIndex+1,
+				total,
+				m.currentCommand,
+				formatSetupDuration(m.setupElapsed),
+			)) + "\n"
+		}
+	}
+
 	if m.done {
 		s += "\n"
 		if m.err != nil {
@@ -157,10 +283,38 @@ type stepCompleteMsg struct {
 	config       *config.Config
 }
 
+type setupStartMsg struct {
+	commands []string
+}
+
+type setupCommandCompleteMsg struct {
+	command  string
+	duration time.Duration
+	err      error
+}
+
+type setupTickMsg time.Time
+
+func setupTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return setupTickMsg(t)
+	})
+}
+
+func (m createModel) runSetupCommand(command string) tea.Cmd {
+	return func() tea.Msg {
+		start := time.Now()
+		err := worktree.RunSetupCommands(m.worktreePath, []string{command})
+		return setupCommandCompleteMsg{
+			command:  command,
+			duration: time.Since(start),
+			err:      err,
+		}
+	}
+}
+
 func (m createModel) runNextStep() tea.Cmd {
 	return func() tea.Msg {
-		m.steps[m.currentStep].status = "running"
-
 		switch m.currentStep {
 		case 0: // Load configuration
 			time.Sleep(100 * time.Millisecond) // Brief pause for visual effect
@@ -176,9 +330,9 @@ func (m createModel) runNextStep() tea.Cmd {
 				return stepCompleteMsg{err: err}
 			}
 
-			cfg := m.loadedConfig
-			if cfg == nil {
-				cfg, _ = config.LoadConfig()
+			cfg, err := m.getConfig()
+			if err != nil {
+				return stepCompleteMsg{err: err}
 			}
 			targetPath := worktree.GetWorktreePath(cfg.Settings.Root, projectName, m.branchName)
 
@@ -192,9 +346,9 @@ func (m createModel) runNextStep() tea.Cmd {
 				return stepCompleteMsg{err: fmt.Errorf("worktree path not set")}
 			}
 
-			cfg := m.loadedConfig
-			if cfg == nil {
-				cfg, _ = config.LoadConfig()
+			cfg, err := m.getConfig()
+			if err != nil {
+				return stepCompleteMsg{err: err}
 			}
 
 			// Get the current working directory (main worktree)
@@ -213,17 +367,31 @@ func (m createModel) runNextStep() tea.Cmd {
 				return stepCompleteMsg{err: fmt.Errorf("worktree path not set")}
 			}
 
-			cfg := m.loadedConfig
-			if cfg == nil {
-				cfg, _ = config.LoadConfig()
-			}
-
-			if err := worktree.RunSetupCommands(m.worktreePath, cfg.Setup); err != nil {
+			cfg, err := m.getConfig()
+			if err != nil {
 				return stepCompleteMsg{err: err}
 			}
-			return stepCompleteMsg{}
+
+			return setupStartMsg{commands: cfg.Setup}
 		}
 
 		return stepCompleteMsg{err: fmt.Errorf("unknown step: %d", m.currentStep)}
 	}
+}
+
+func (m createModel) getConfig() (*config.Config, error) {
+	if m.loadedConfig != nil {
+		return m.loadedConfig, nil
+	}
+	return config.LoadConfig()
+}
+
+func formatSetupDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Second {
+		return d.Round(10 * time.Millisecond).String()
+	}
+	return d.Round(100 * time.Millisecond).String()
 }
