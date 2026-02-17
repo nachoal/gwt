@@ -34,7 +34,7 @@ function gwt {
       done
 
       local wt_path
-      wt_path=$(command gwt list "$@")
+      wt_path=$(GWT_FORCE_TUI=1 command gwt list "$@")
       if [ $? -eq 0 ] && [ -n "$wt_path" ]; then
         cd "$wt_path"
         # Emit OSC 7 to inform WezTerm of directory change
@@ -139,77 +139,17 @@ function gwt {
 
     done)
       shift
-      local branch="$1"
-      local base_branch="$2"
-      # If no branch provided, try to infer from current worktree
-      if [ -z "$branch" ]; then
-        branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-        if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
-          echo "Usage: gwt done <branch> [base] (or run inside a worktree)" >&2
-          return 1
-        fi
-      fi
-      # If no base provided, try to detect the repo's default
-      if [ -z "$base_branch" ]; then
-        local _defref
-        _defref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
-        if [ -n "$_defref" ]; then
-          base_branch="${_defref##*/}"
-        fi
-        if [ -z "$base_branch" ]; then
-          for b in main master develop; do
-            git rev-parse --verify "refs/remotes/origin/$b" >/dev/null 2>&1
-            if [ $? -eq 0 ]; then
-              base_branch="$b"
-              break
-            fi
-          done
-        fi
-      fi
-      if [ -z "$base_branch" ]; then
-        echo "gwt: could not determine base branch; specify explicitly" >&2
-        return 1
-      fi
-      if [ "$branch" = "$base_branch" ]; then
-        echo "gwt: refusing to remove base branch '$base_branch'" >&2
-        return 1
-      fi
-
-      # Prefer a worktree that actually has the base branch checked out, so we
-      # can safely run git pull --ff-only without changing any other worktree.
       local wt_path
-      wt_path=$(command gwt switch "$base_branch" 2>/dev/null)
-      if [ $? -eq 0 ] && [ -n "$wt_path" ]; then
+      wt_path=$(command gwt done --print-path "$@")
+      local _gwt_ec=$?
+      if [ $_gwt_ec -ne 0 ]; then
+        return $_gwt_ec
+      fi
+      if [ -n "$wt_path" ]; then
         cd "$wt_path" || return $?
         # Emit OSC 7 to inform WezTerm of directory change
         printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
-        git pull --ff-only || return $?
-      else
-        # Fallback: if no worktree has the base branch checked out (common when
-        # the main worktree is on a feature branch), operate from the main
-        # worktree and fast-forward the base branch ref without switching.
-        local _common
-        _common=$(git rev-parse --git-common-dir 2>/dev/null)
-        if [ -z "$_common" ]; then
-          echo "gwt: not in a git repository" >&2
-          return 1
-        fi
-        if [ "${_common#/}" = "$_common" ]; then
-          _common="$PWD/$_common"
-        fi
-        local _main_wt
-        _main_wt=$(cd "$(dirname "$_common")" 2>/dev/null && pwd)
-        if [ -z "$_main_wt" ]; then
-          echo "gwt: could not determine main worktree path" >&2
-          return 1
-        fi
-        cd "$_main_wt" || return $?
-        # Emit OSC 7 to inform WezTerm of directory change
-        printf "\033]7;file://%s%s\033\\" "${HOST:-$HOSTNAME}" "$PWD"
-        # Fast-forward-only update of the local base branch ref.
-        git fetch origin "$base_branch:$base_branch" || return $?
       fi
-      command gwt remove "$branch"
       ;;
 
     *)
@@ -223,20 +163,59 @@ function gwt {
 const startMarker = "# >>> gwt shell integration >>>\n"
 const endMarker = "# <<< gwt shell integration <<<\n"
 
-func installShell(rcPath string) error {
-	data, _ := os.ReadFile(rcPath)
-	content := string(data)
-	// remove existing block
+func shellScriptPathForRC(rcPath string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	scriptName := "shell.sh"
+	base := strings.ToLower(filepath.Base(rcPath))
+	switch {
+	case strings.Contains(base, "zsh"):
+		scriptName = "shell.zsh"
+	case strings.Contains(base, "bash"):
+		scriptName = "shell.bash"
+	}
+	return filepath.Join(home, ".config", "gwt", scriptName), nil
+}
+
+func sourceLineForShellScript(scriptPath string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && strings.HasPrefix(scriptPath, home+string(os.PathSeparator)) {
+		return "source ~" + scriptPath[len(home):]
+	}
+	return "source " + scriptPath
+}
+
+func removeManagedBlock(content string) string {
 	if i := strings.Index(content, startMarker); i >= 0 {
 		if j := strings.Index(content[i+len(startMarker):], endMarker); j >= 0 {
-			content = content[:i] + content[i+len(startMarker)+j+len(endMarker):]
+			return content[:i] + content[i+len(startMarker)+j+len(endMarker):]
 		}
 	}
+	return content
+}
+
+func installShell(rcPath string) error {
+	scriptPath, err := shellScriptPathForRC(rcPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(scriptPath, []byte(shellFunction+"\n"), 0o644); err != nil {
+		return err
+	}
+
+	data, _ := os.ReadFile(rcPath)
+	content := removeManagedBlock(string(data))
 	// ensure trailing newline
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	block := startMarker + shellFunction + "\n" + endMarker
+	block := startMarker + sourceLineForShellScript(scriptPath) + "\n" + endMarker
 	content += block
 
 	if err := os.MkdirAll(filepath.Dir(rcPath), 0o755); err != nil {
@@ -264,7 +243,14 @@ func removeShell(rcPath string) error {
 		return errors.New("unterminated gwt shell block")
 	}
 	content = content[:i] + content[i+len(startMarker)+j+len(endMarker):]
-	return os.WriteFile(rcPath, []byte(content), 0o644)
+	if err := os.WriteFile(rcPath, []byte(content), 0o644); err != nil {
+		return err
+	}
+
+	if scriptPath, err := shellScriptPathForRC(rcPath); err == nil {
+		_ = os.Remove(scriptPath)
+	}
+	return nil
 }
 
 func detectDefaultRC() string {
@@ -287,7 +273,7 @@ func detectDefaultRC() string {
 var shellCmd = &cobra.Command{
 	Use:   "shell",
 	Short: "Output or install shell integration",
-	Long:  "Output shell integration to enable 'gwt switch' to cd, plus helpers for 'new -c' and 'done'. Use --install to write into your shell rc (zsh/bash).",
+	Long:  "Output shell integration to enable 'gwt switch' to cd, plus helpers for 'new -c' and 'done'. Use --install to write a small source line into your shell rc (zsh/bash).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		install, _ := cmd.Flags().GetBool("install")
 		remove, _ := cmd.Flags().GetBool("remove")
@@ -302,7 +288,11 @@ var shellCmd = &cobra.Command{
 			if err := installShell(rc); err != nil {
 				return err
 			}
+			scriptPath, _ := shellScriptPathForRC(rc)
 			fmt.Printf("Installed gwt shell integration into %s\n", rc)
+			if scriptPath != "" {
+				fmt.Printf("Wrote shell helper to %s\n", scriptPath)
+			}
 			fmt.Println("Open a new shell or 'source' your rc to activate.")
 			return nil
 		}
@@ -320,7 +310,7 @@ var shellCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(shellCmd)
-	shellCmd.Flags().Bool("install", false, "Install the shell function into your rc file")
-	shellCmd.Flags().Bool("remove", false, "Remove the shell function from your rc file")
+	shellCmd.Flags().Bool("install", false, "Install a managed source line into your rc file")
+	shellCmd.Flags().Bool("remove", false, "Remove managed shell integration from your rc file")
 	shellCmd.Flags().String("rc", "", "Path to rc file (defaults based on $SHELL)")
 }
